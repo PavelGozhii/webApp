@@ -1,5 +1,8 @@
 package dao;
 
+import model.annotation.Column;
+import model.annotation.Id;
+import model.annotation.Table;
 import org.apache.log4j.Logger;
 
 import java.lang.reflect.Field;
@@ -18,46 +21,57 @@ public class AbstractDao<T> implements GenericDao<T> {
         this.tClass = tClass;
     }
 
+    @Override
     public boolean save(T t) {
         boolean result = false;
         try (Connection connection = DBConnector.connect()) {
-            StringBuilder query = new StringBuilder("INSERT INTO " + getClassName() + " (");
-            Field[] fields = tClass.getDeclaredFields();
-            String[] strings = getFieldsName();
-            for (int i = 0; i < strings.length; i++) {
-                fields[i].setAccessible(true);
-                if (fields[i].get(t) != null) {
-                    if (i == fields.length - 1) {
-                        query.append(strings[i]).append(")");
-                    } else {
-                        query.append(strings[i]).append(", ");
-                    }
-                }
-            }
-            query.append(" VALUES ( ");
-            for (int i = 0; i < fields.length; i++) {
-                fields[i].setAccessible(true);
-                if (fields[i].get(t) != null) {
-                    if (i == fields.length - 1) {
-                        query.append("'").append(fields[i].get(t)).append("')");
-                    } else {
-                        query.append("'").append(fields[i].get(t)).append("',");
-                    }
-                }
-            }
+            String query = generateSaveQuery(t);
             logger.debug(query);
-            PreparedStatement preparedStatement = connection.prepareStatement(query.toString());
+            PreparedStatement preparedStatement = connection.prepareStatement(query);
             result = preparedStatement.execute();
-        } catch (SQLException | IllegalAccessException e) {
+        } catch (SQLException e) {
             logger.warn(e.getMessage(), e);
         }
         return result;
     }
 
+    private String generateSaveQuery(T t) {
+        List<Field> fields = getColumn();
+        StringBuilder query = new StringBuilder("INSERT INTO " + getTableName() + " (");
+        try {
+            for (int i = 0; i < fields.size(); i++) {
+                fields.get(i).setAccessible(true);
+                if (fields.get(i).get(t) != null) {
+                    if (i == fields.size() - 1) {
+                        query.append(fields.get(i).getAnnotation(Column.class).name()).append(")");
+                    } else {
+                        query.append(fields.get(i).getAnnotation(Column.class).name()).append(", ");
+                    }
+                }
+            }
+            query.append(" VALUES ( ");
+            for (int i = 0; i < fields.size(); i++) {
+                fields.get(i).setAccessible(true);
+                if (fields.get(i).get(t) != null) {
+                    if (i == fields.size() - 1) {
+                        query.append("'").append(fields.get(i).get(t)).append("')");
+                    } else {
+                        query.append("'").append(fields.get(i).get(t)).append("',");
+                    }
+                }
+            }
+        } catch (IllegalAccessException e) {
+            logger.warn(e.getMessage(), e);
+        }
+        logger.debug(query);
+        return query.toString();
+    }
+
+    @Override
     public T getById(String id) {
         T t = getNewInstance();
         try (Connection connection = DBConnector.connect()) {
-            String query = "SELECT * FROM " + getClassName() + " WHERE id = " + id;
+            String query = "SELECT * FROM " + getTableName() + " WHERE " + getId().getAnnotation(Column.class).name() + " = " + id;
             PreparedStatement preparedStatement = connection.prepareStatement(query);
             logger.debug(query);
             ResultSet resultSet = preparedStatement.executeQuery();
@@ -70,27 +84,11 @@ public class AbstractDao<T> implements GenericDao<T> {
         return t;
     }
 
-    public List<T> getByCriteria(String value, Field field) {
-        List<T> list = new ArrayList<>();
-        try (Connection connection = DBConnector.connect()) {
-            String query = "SELECT * FROM " + getClassName() + " WHERE " + field.getName() + " = " + value;
-            PreparedStatement preparedStatement = connection.prepareStatement(query);
-            System.out.println(preparedStatement);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            logger.debug(query);
-            while (resultSet.next()) {
-                list.add(setFields(resultSet));
-            }
-        } catch (SQLException e) {
-            logger.warn(e.getMessage(), e);
-        }
-        return list;
-    }
-
+    @Override
     public List<T> getByCriteria(String value, String field) {
         List<T> list = new ArrayList<>();
         try (Connection connection = DBConnector.connect()) {
-            String query = "SELECT * FROM " + getClassName() + " WHERE " + field + " = '" + value + "'";
+            String query = "SELECT * FROM " + getTableName() + " WHERE " + field + " = '" + value + "'";
             PreparedStatement preparedStatement = connection.prepareStatement(query);
             logger.debug(query);
             ResultSet resultSet = preparedStatement.executeQuery();
@@ -106,7 +104,7 @@ public class AbstractDao<T> implements GenericDao<T> {
     @Override
     public boolean deleteByCriteria(String value, String field) {
         try (Connection connection = DBConnector.connect()) {
-            String query = "DELETE FROM " + getClassName() + " WHERE " + field + " ='" + value + "'";
+            String query = "DELETE FROM " + getTableName() + " WHERE " + field + " ='" + value + "'";
             PreparedStatement preparedStatement = connection.prepareStatement(query);
             logger.debug(query);
             preparedStatement.executeUpdate();
@@ -117,36 +115,10 @@ public class AbstractDao<T> implements GenericDao<T> {
         }
     }
 
+    @Override
     public boolean update(T t) {
         try (Connection connection = DBConnector.connect()) {
-            StringBuilder query = new StringBuilder("UPDATE " + getClassName() + " SET ");
-            Field[] fields = tClass.getDeclaredFields();
-            String[] strings = getFieldsName();
-            for (int i = 0; i < fields.length; i++) {
-                fields[i].setAccessible(true);
-                query.append(strings[i]).append(" = '").append(fields[i].get(t));
-                if (i == fields.length - 1) {
-                    query.append("' ");
-                } else {
-                    query.append("', ");
-                }
-            }
-            Field field = tClass.getDeclaredField("id");
-            field.setAccessible(true);
-            query.append("WHERE id =").append(field.get(t));
-            PreparedStatement preparedStatement = connection.prepareStatement(query.toString());
-            logger.debug(query);
-            preparedStatement.executeUpdate();
-            return true;
-        } catch (SQLException | IllegalAccessException | NoSuchFieldException e) {
-            logger.warn(e.getMessage(), e);
-            return false;
-        }
-    }
-
-    public boolean delete(String id) {
-        try (Connection connection = DBConnector.connect()) {
-            String query = "DELETE FROM " + getClassName() + " WHERE id = " + id;
+            String query = createUpdateQuery(t);
             PreparedStatement preparedStatement = connection.prepareStatement(query);
             logger.debug(query);
             preparedStatement.executeUpdate();
@@ -157,10 +129,47 @@ public class AbstractDao<T> implements GenericDao<T> {
         }
     }
 
+    private String createUpdateQuery(T t) {
+        StringBuilder query = new StringBuilder("UPDATE " + getTableName() + " SET ");
+        try {
+            List<Field> fields = getColumn();
+            for (int i = 0; i < fields.size(); i++) {
+                fields.get(i).setAccessible(true);
+                query.append(fields.get(i).getAnnotation(Column.class).name()).append(" = '").append(fields.get(i).get(t));
+                if (i == fields.size() - 1) {
+                    query.append("' ");
+                } else {
+                    query.append("', ");
+                }
+            }
+            Field field = tClass.getDeclaredField("id");
+            field.setAccessible(true);
+            query.append("WHERE " + getId().getAnnotation(Column.class).name() + " =").append(field.get(t));
+        } catch (IllegalAccessException | NoSuchFieldException e) {
+            e.printStackTrace();
+        }
+        return query.toString();
+    }
+
+    @Override
+    public boolean delete(String id) {
+        try (Connection connection = DBConnector.connect()) {
+            String query = "DELETE FROM " + getTableName() + " WHERE " + getId().getAnnotation(Column.class).name() + " = " + id;
+            PreparedStatement preparedStatement = connection.prepareStatement(query);
+            logger.debug(query);
+            preparedStatement.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            logger.warn(e.getMessage(), e);
+            return false;
+        }
+    }
+
+    @Override
     public List<T> getAll() {
         List<T> list = new ArrayList<>();
         try (Connection connection = DBConnector.connect()) {
-            String query = "SELECT * FROM " + getClassName();
+            String query = "SELECT * FROM " + getTableName();
             PreparedStatement preparedStatement = connection.prepareStatement(query);
             logger.debug(query);
             ResultSet resultSet = preparedStatement.executeQuery();
@@ -173,17 +182,19 @@ public class AbstractDao<T> implements GenericDao<T> {
         return list;
     }
 
-    private String[] getFieldsName() {
+    private List<Field> getColumn() {
         Field[] fields = tClass.getDeclaredFields();
-        String[] nameOfFields = new String[fields.length];
-        for (int i = 0; i < fields.length; i++) {
-            nameOfFields[i] = fields[i].getName();
+        List<Field> fieldList = new ArrayList<>();
+        for (Field field : fields) {
+            if (field.getAnnotation(Column.class) != null) {
+                fieldList.add(field);
+            }
         }
-        return nameOfFields;
+        return fieldList;
     }
 
-    private String getClassName() {
-        return tClass.getSimpleName();
+    private String getTableName() {
+        return tClass.getAnnotation(Table.class).name();
     }
 
     private T getNewInstance() {
@@ -197,14 +208,25 @@ public class AbstractDao<T> implements GenericDao<T> {
         return t;
     }
 
+    private Field getId() {
+        Field[] fields = tClass.getDeclaredFields();
+        Field key = null;
+        for (Field field : fields) {
+            if (field.getAnnotation(Id.class) != null) {
+                key = field;
+                break;
+            }
+        }
+        return key;
+    }
+
     private T setFields(ResultSet resultSet) {
         T t = getNewInstance();
         try {
-            Field[] fields = tClass.getDeclaredFields();
-            String[] strings = getFieldsName();
-            for (int i = 0; i < fields.length; i++) {
-                fields[i].setAccessible(true);
-                fields[i].set(t, resultSet.getObject(strings[i]));
+            List<Field> fields = getColumn();
+            for (int i = 0; i < fields.size(); i++) {
+                fields.get(i).setAccessible(true);
+                fields.get(i).set(t, resultSet.getObject(fields.get(i).getAnnotation(Column.class).name()));
             }
         } catch (SQLException | IllegalAccessException e) {
             logger.error(e.getMessage(), e);

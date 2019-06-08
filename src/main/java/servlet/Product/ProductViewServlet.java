@@ -25,9 +25,9 @@ public class ProductViewServlet extends HttpServlet {
         String id = request.getParameter("id");
         AbstractDao<Product> productAbstractDao = new AbstractDao<>(Product.class);
         List<Product> products;
-        if(id != null){
+        if (id != null) {
             products = productAbstractDao.getByCriteria(id, "category");
-        }else{
+        } else {
             products = productAbstractDao.getAll();
         }
         request.setAttribute("products", products);

@@ -1,10 +1,22 @@
 package model;
 
+import model.annotation.Column;
+import model.annotation.Id;
+import model.annotation.Table;
+
+@Table(name = "Product")
 public class Product {
+
+    @Id
+    @Column(name = "id")
     private Integer id;
+    @Column(name = "name")
     private String name;
+    @Column(name = "category")
     private Integer category;
+    @Column(name = "price")
     private double price;
+
 
     public Product(Integer id, String name, Integer category, double price) {
         this.id = id;
@@ -13,7 +25,7 @@ public class Product {
         this.price = price;
     }
 
-    public Product(String name, Integer category, double price){
+    public Product(String name, Integer category, double price) {
         this.id = null;
         this.name = name;
         this.category = category;
