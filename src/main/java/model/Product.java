@@ -10,10 +10,13 @@ public class Product {
     @Id
     @Column(name = "id")
     private Integer id;
+
     @Column(name = "name")
     private String name;
+
     @Column(name = "category")
     private Integer category;
+
     @Column(name = "price")
     private double price;
 

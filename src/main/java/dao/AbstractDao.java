@@ -12,6 +12,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class AbstractDao<T> implements GenericDao<T> {
     private Class<T> tClass;
@@ -38,33 +40,43 @@ public class AbstractDao<T> implements GenericDao<T> {
     private String generateSaveQuery(T t) {
         List<Field> fields = getColumn();
         StringBuilder query = new StringBuilder("INSERT INTO " + getTableName() + " (");
-        try {
-            for (int i = 0; i < fields.size(); i++) {
-                fields.get(i).setAccessible(true);
-                if (fields.get(i).get(t) != null) {
-                    if (i == fields.size() - 1) {
-                        query.append(fields.get(i).getAnnotation(Column.class).name()).append(")");
-                    } else {
-                        query.append(fields.get(i).getAnnotation(Column.class).name()).append(", ");
+        query = appendFieldToSaveQuery(fields.stream()
+                .filter(field -> isNotNull(t, field))
+                .map(field -> field.getAnnotation(Column.class).name())
+                .collect(Collectors.toList()), query)
+                .append(" VALUES ( ");
+        query = appendFieldToSaveQuery(fields.stream()
+                .filter(field -> isNotNull(t, field))
+                .map(field -> {
+                    try {
+                        field.setAccessible(true);
+                        return "'" + String.valueOf(field.get(t)) + "'";
+                    } catch (IllegalAccessException e) {
+                        logger.warn(e);
+                        return "";
                     }
-                }
-            }
-            query.append(" VALUES ( ");
-            for (int i = 0; i < fields.size(); i++) {
-                fields.get(i).setAccessible(true);
-                if (fields.get(i).get(t) != null) {
-                    if (i == fields.size() - 1) {
-                        query.append("'").append(fields.get(i).get(t)).append("')");
-                    } else {
-                        query.append("'").append(fields.get(i).get(t)).append("',");
-                    }
-                }
-            }
-        } catch (IllegalAccessException e) {
-            logger.warn(e.getMessage(), e);
-        }
+                })
+                .collect(Collectors.toList()), query);
         logger.debug(query);
         return query.toString();
+    }
+
+    private boolean isNotNull(T t, Field field) {
+        try {
+            field.setAccessible(true);
+            return field.get(t) != null;
+        } catch (IllegalAccessException e) {
+            logger.warn(e);
+            return false;
+        }
+    }
+
+    private StringBuilder appendFieldToSaveQuery(List<String> fields, StringBuilder query) {
+        IntStream.range(0, fields.size())
+                .filter(i -> fields.get(i) != null)
+                .forEachOrdered(i -> query.append(fields.get(i))
+                        .append(i == fields.size() - 1 ? ")" : ","));
+        return query;
     }
 
     @Override
